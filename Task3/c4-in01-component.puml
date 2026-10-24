@@ -1,0 +1,58 @@
+@startuml c4-in01-component
+!include <C4/C4_Component>
+LAYOUT_TOP_DOWN()
+skinparam backgroundColor #FFFFFF
+AddRelTag("trust", $lineColor="#C0392B", $textColor="#C0392B", $lineStyle=DashedLine(), $legendText="граница доверия ГД-N")
+AddElementTag("ml", $bgColor="#1E6B52", $borderColor="#14513D", $legendText="обучаемое звено")
+AddElementTag("rule", $bgColor="#4A6FA5", $borderColor="#34507A", $legendText="детерминированный код")
+AddElementTag("existing", $bgColor="#8C8C8C", $borderColor="#6E6E6E", $legendText="существующая система банка")
+
+title ИН-01. Сервис приоритизации · C4 Component
+
+ContainerQueue(bus, "Брокер событий", "брокер сообщений", "«Операция помечена»")
+Container(feat, "Сервис признаков", "обычный код", "Снимок признаков на момент постановки")
+ContainerDb(reg, "Реестр моделей и конфигурации", "", "Версии модели, калибровки, порогов; флаг режима")
+ContainerDb(log, "Журнал оценок и решений", "", "")
+Container(mon, "Мониторинг", "", "")
+System_Ext(fm, "Система финмониторинга", "Очередь разбора и рабочее место аналитика", $tags="existing")
+
+Container_Boundary(prio, "Сервис приоритизации") {
+  Component(consumer, "Потребитель событий", "обычный код", "Идемпотентность по id операции и версии; повтор без дубля в очереди", $tags="rule")
+  Component(cfg, "Загрузчик конфигурации", "обычный код", "Закреплённые версии; флаг ограниченного режима; проверка подписи артефакта", $tags="rule")
+  Component(fclient, "Клиент признаков", "обычный код", "Запрос снимка, тайм-аут, повтор", $tags="rule")
+  Component(inputcheck, "Проверка входа", "обычный код", "Полнота и свежесть признаков, диапазоны обучения, история клиента, допустимый сегмент", $tags="rule")
+  Component(model, "Модель оценки", "К1 или К2 по итогам приёмки", "Оценка «уйдёт на эскалацию» по таблице, времени и словарным признакам назначения", $tags="ml")
+  Component(calib, "Калибровка", "обучаемое преобразование", "Переводит оценку в долю эскалаций на отложенном периоде", $tags="ml")
+  Component(explain, "Объяснитель", "обычный код", "Коды причин из утверждённого справочника по вкладам признаков", $tags="rule")
+  Component(policy, "Политика очереди", "обычный код", "Обязательные по ПВК вне ранжирования; порог отсечки K; зона воздержания; расхождение с правилом; подмешивание контрольной выборки", $tags="rule")
+  Component(fallback, "Резервный порядок", "обычный код", "Порядок по сумме и уровню риска, как сейчас", $tags="rule")
+  Component(validator, "Валидатор контракта", "обычный код", "Схема, диапазоны, версии, коды причин; без него запись в систему ФМ не уходит", $tags="rule")
+  Component(publisher, "Публикатор", "обычный код", "Пишет только приоритет и класс размещения; не трогает статус операции", $tags="rule")
+  Component(audit, "Писатель журнала и метрик", "обычный код", "Вход, версии, оценка, класс размещения, путь (модель / резерв)", $tags="rule")
+}
+
+Rel(bus, consumer, "Событие")
+Rel(consumer, fclient, "Операция к оценке")
+Rel(fclient, feat, "Снимок признаков", "синхронно, тайм-аут")
+Rel(fclient, inputcheck, "Признаки")
+Rel(inputcheck, model, "Валидный вход")
+Rel(inputcheck, fallback, "Воздержание: нет признаков, вне диапазона, нет истории")
+Rel(model, calib, "Оценка")
+Rel(calib, explain, "Калиброванная оценка")
+Rel(explain, policy, "Оценка и причины")
+Rel(fclient, fallback, "Отказ: признаки недоступны")
+Rel(fallback, policy, "Позиция по правилу")
+Rel(reg, cfg, "[ГД-4] Артефакт модели и конфигурация", $tags="trust")
+Rel(cfg, model, "Версия модели")
+Rel(cfg, calib, "Версия калибровки")
+Rel(cfg, policy, "Порог K, ширина зоны воздержания, флаг режима")
+Rel(policy, validator, "Решение о размещении")
+Rel(validator, publisher, "Прошло контракт")
+Rel(validator, fallback, "Не прошло: позиция по правилу")
+Rel(publisher, fm, "[ГД-3] Приоритет, класс размещения, коды причин", $tags="trust")
+Rel(policy, audit, "Запись решения")
+Rel(audit, log, "Журнал")
+Rel(audit, mon, "Метрики")
+
+SHOW_LEGEND()
+@enduml
